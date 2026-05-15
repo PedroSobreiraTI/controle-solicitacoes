@@ -1,0 +1,156 @@
+﻿<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Controle de Solicitações</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #333; padding: 24px; }
+    h1 { font-size: 1.6rem; color: #1a1a2e; margin-bottom: 24px; }
+    .resumo { display: flex; gap: 16px; margin-bottom: 28px; }
+    .card { background: white; border-radius: 10px; padding: 16px 24px; flex: 1; box-shadow: 0 2px 8px rgba(0,0,0,0.07); text-align: center; }
+    .card .numero { font-size: 2rem; font-weight: 700; }
+    .card .label { font-size: 0.85rem; color: #888; margin-top: 4px; }
+    .card.pendente .numero { color: #e67e22; }
+    .card.concluida .numero { color: #27ae60; }
+    .card.total .numero { color: #2980b9; }
+    .form-box { background: white; border-radius: 10px; padding: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); margin-bottom: 28px; }
+    .form-box h2 { font-size: 1rem; margin-bottom: 16px; color: #555; text-transform: uppercase; }
+    .form-row { display: flex; gap: 12px; flex-wrap: wrap; }
+    .form-row input, .form-row select { flex: 1; min-width: 160px; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.95rem; outline: none; }
+    .form-row button { padding: 10px 24px; background: #2980b9; color: white; border: none; border-radius: 8px; font-size: 0.95rem; cursor: pointer; }
+    .form-row button:hover { background: #1f6391; }
+    .erro-msg { color: #e74c3c; font-size: 0.85rem; margin-top: 8px; display: none; }
+    .filtro-box { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+    .filtro-box select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.9rem; }
+    .tabela-box { background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; }
+    thead tr { background: #1a1a2e; color: white; }
+    th, td { padding: 12px 16px; text-align: left; font-size: 0.9rem; }
+    tbody tr:nth-child(even) { background: #f9f9fb; }
+    tbody tr:hover { background: #eef4fb; }
+    .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: 600; }
+    .badge.Pendente { background: #fdebd0; color: #e67e22; }
+    .badge.EmAndamento { background: #d6eaf8; color: #2980b9; }
+    .badge.Concluída { background: #d5f5e3; color: #27ae60; }
+    .badge.Cancelada { background: #fadbd8; color: #e74c3c; }
+    select.status-select { padding: 4px 8px; border-radius: 6px; border: 1px solid #ccc; font-size: 0.85rem; }
+    .vazio { text-align: center; padding: 32px; color: #aaa; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>📋 Controle de Solicitações</h1>
+  <div class="resumo">
+    <div class="card total"><div class="numero" id="totalCount">0</div><div class="label">Total</div></div>
+    <div class="card pendente"><div class="numero" id="pendenteCount">0</div><div class="label">Pendentes</div></div>
+    <div class="card concluida"><div class="numero" id="concluidaCount">0</div><div class="label">Concluídas</div></div>
+  </div>
+  <div class="form-box">
+    <h2>Nova Solicitação</h2>
+    <div class="form-row">
+      <input type="text" id="titulo" placeholder="Título *" />
+      <input type="text" id="solicitante" placeholder="Solicitante" />
+      <select id="status">
+        <option value="Pendente">Pendente</option>
+        <option value="Em Andamento">Em Andamento</option>
+        <option value="Concluída">Concluída</option>
+        <option value="Cancelada">Cancelada</option>
+      </select>
+      <button onclick="salvarSolicitacao()">Salvar</button>
+    </div>
+    <div class="erro-msg" id="erroMsg">⚠️ Os campos Título e Status são obrigatórios.</div>
+  </div>
+  <div class="filtro-box">
+    <label>Filtrar por status:</label>
+    <select id="filtroStatus" onchange="renderTabela()">
+      <option value="">Todos</option>
+      <option value="Pendente">Pendente</option>
+      <option value="Em Andamento">Em Andamento</option>
+      <option value="Concluída">Concluída</option>
+      <option value="Cancelada">Cancelada</option>
+    </select>
+  </div>
+  <div class="tabela-box">
+    <table>
+      <thead>
+        <tr><th>#</th><th>Título</th><th>Solicitante</th><th>Status</th><th>Alterar Status</th></tr>
+      </thead>
+      <tbody id="tabelaBody">
+        <tr><td colspan="5" class="vazio">Nenhuma solicitação cadastrada.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <script>
+    const API = 'http://localhost:5000';
+    async function carregarSolicitacoes() {
+      try {
+        const res = await fetch(`${API}/solicitacoes`);
+        const data = await res.json();
+        window._solicitacoes = data;
+        renderTabela();
+        atualizarResumo();
+      } catch (e) { console.error('Erro ao carregar:', e); }
+    }
+    function renderTabela() {
+      const filtro = document.getElementById('filtroStatus').value;
+      const lista = (window._solicitacoes || []).filter(s => filtro === '' || s.status === filtro);
+      const tbody = document.getElementById('tabelaBody');
+      if (lista.length === 0) { tbody.innerHTML = '<tr><td colspan="5" class="vazio">Nenhuma solicitação encontrada.</td></tr>'; return; }
+      tbody.innerHTML = lista.map(s => `
+        <tr>
+          <td>${s.id}</td>
+          <td>${escHtml(s.titulo)}</td>
+          <td>${escHtml(s.solicitante || '—')}</td>
+          <td><span class="badge ${s.status.replace(' ', '')}">${s.status}</span></td>
+          <td><select class="status-select" onchange="alterarStatus(${s.id}, this.value)">
+            ${['Pendente','Em Andamento','Concluída','Cancelada'].map(opt =>
+              `<option value="${opt}" ${s.status === opt ? 'selected' : ''}>${opt}</option>`
+            ).join('')}
+          </select></td>
+        </tr>`).join('');
+    }
+    function atualizarResumo() {
+      const lista = window._solicitacoes || [];
+      document.getElementById('totalCount').textContent = lista.length;
+      document.getElementById('pendenteCount').textContent = lista.filter(s => s.status === 'Pendente').length;
+      document.getElementById('concluidaCount').textContent = lista.filter(s => s.status === 'Concluída').length;
+    }
+    async function salvarSolicitacao() {
+      const titulo = document.getElementById('titulo').value.trim();
+      const solicitante = document.getElementById('solicitante').value.trim();
+      const status = document.getElementById('status').value;
+      const erroMsg = document.getElementById('erroMsg');
+      if (!titulo || !status) { erroMsg.style.display = 'block'; return; }
+      erroMsg.style.display = 'none';
+      try {
+        const res = await fetch(`${API}/solicitacoes`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ titulo, solicitante, status })
+        });
+        if (res.ok) {
+          document.getElementById('titulo').value = '';
+          document.getElementById('solicitante').value = '';
+          document.getElementById('status').value = 'Pendente';
+          await carregarSolicitacoes();
+        } else { const err = await res.json(); alert(err.erro || 'Erro ao salvar.'); }
+      } catch (e) { alert('Não foi possível conectar à API.'); }
+    }
+    async function alterarStatus(id, novoStatus) {
+      try {
+        await fetch(`${API}/solicitacoes/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: novoStatus })
+        });
+        await carregarSolicitacoes();
+      } catch (e) { alert('Erro ao atualizar status.'); }
+    }
+    function escHtml(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+    carregarSolicitacoes();
+  </script>
+</body>
+</html>
